@@ -1,109 +1,109 @@
-# 𓅃 Study Hub (AI Lecture Summarizer Pro)
+# Study Hub
 
-> Brand update: this project is now presented as **Study Hub**.
+Study Hub is a Streamlit app that turns lecture files and PDFs into structured study material: summaries, outlines, key points, flashcards, analytics, and exportable notes.
 
-> 🚀 Transform your **lecture audio/video/YouTube** content into intelligent, exportable summaries using advanced AI.
-- [AI Lecture Summarizer Banner](https://github.com/Issac-Moses/Notes-Summarizer)
-- ![Screenshot](screenshots/5.jpg)
----
-## 🖥️ Demo Screenshot
+## What this project does
 
-![Screenshot](screenshots/6.jpg)
-![Screenshot](screenshots/2.jpg)
-![Screenshot](screenshots/3.jpg)
-![Screenshot](screenshots/4.jpg)
+- User authentication with signup/login (local SQLite database)
+- Session-based login persistence (DB session token + local temp token file)
+- Input support:
+    - Audio/video file upload (`wav`, `mp3`, `m4a`, `mp4`, `avi`, `mov`)
+    - PDF upload with text extraction + OCR fallback
+- AI processing pipeline:
+    - Transcription using Whisper
+    - Summarization and study-asset generation using Hugging Face Transformers (`google/flan-t5-base`)
+- Summary length control: `Brief`, `Medium`, `Detailed`
+- Output sections include:
+    - Concept snapshot
+    - Core concepts (definitions, formulas, mechanisms, processes)
+    - Exam insights
+    - Applications and common mistakes
+    - Active-recall flashcards
+    - Difficulty scoring
+- Export formats from UI: `PDF`, `Markdown`, `Word`
+- Study history, analytics, and personal notes per user
 
----
-## 📌 Project Overview
+## Tech stack
 
-**Study Hub (AI Lecture Summarizer Pro)** is a modern Streamlit-based application that:
-- Accepts audio via microphone, file upload, or YouTube link.
-- Transcribes using [OpenAI Whisper](https://github.com/openai/whisper).
-- Summarizes using `google/flan-t5-large` via HuggingFace Transformers.
-- Exports content in **PDF**, **Word**, or **JSON** formats.
-- Uses advanced CSS for sleek UI and real-time interaction.
-- Developed by **Issac Moses & Thirumalai Nambi**.
+- Frontend/UI: Streamlit + custom CSS
+- Transcription: OpenAI Whisper
+- Summarization: Transformers pipeline
+- PDF parsing: `pdfplumber`, `PyPDF2`
+- OCR fallback: `pytesseract`, `Pillow`
+- Export: `fpdf`, `python-docx`
+- Database: SQLite (`notes_app.db`)
 
----
+## Project structure
 
-## 🌟 Features
+- `main.py` - main Streamlit app UI and flow
+- `auth.py` - login/signup screens and auth helpers
+- `database.py` - SQLite schema + data access for users/sessions/history/notes
+- `lecture_processor.py` - transcription, summarization, PDF/OCR, export logic
+- `style.css` - additional styling
+- `requirements.txt` - Python dependencies
+- `screenshots/` - UI screenshots
 
-- 🎤 Real-time microphone recording.
-- 📁 Upload audio/video files (`.mp3`, `.mp4`, `.wav`, etc.).
-- ▶️ Summarize YouTube videos directly via URL.
-- 🧠 AI-based summarization and key point extraction.
-- 📄 Export to PDF, Word, or JSON.
-- 📊 History & analytics tabs with session tracking.
-- 🌈 Stylish dark theme with animations and custom components.
-- 🤖 Powered by: `Whisper`, `Flan-T5`, `Streamlit`, `FPDF`, `python-docx`, `yt-dlp`.
+## Setup
 
----
+### 1) Clone and enter project
 
+```bash
+git clone https://github.com/ReZo-s4m/StudyHub.git
+cd StudyHub
+```
 
+### 2) Create and activate virtual environment (recommended)
 
-## 🧰 Tech Stack
+```bash
+python -m venv .venv
+```
 
-| Component         | Technology                         |
-|------------------|-------------------------------------|
-| Frontend         | Streamlit + Custom CSS              |
-| Transcription    | OpenAI Whisper                      |
-| Summarization    | HuggingFace Transformers (Flan-T5)  |
-| Audio Recording  | sounddevice + scipy                 |
-| File Export      | fpdf, python-docx, json             |
-| YouTube Support  | yt-dlp                              |
+Windows PowerShell:
 
----
+```bash
+.venv\Scripts\Activate.ps1
+```
 
-## 🗂️ Project Structure
+### 3) Install dependencies
 
-- ├── main.py # Streamlit frontend
-- ├── lecture4.py # Backend logic (AI, transcription, exports)
-- ├── style.css # Custom styles and UI enhancements
-- ├── silvy_logo.png # App logo (optional)
-- └── README.md # This file
+```bash
+pip install -r requirements.txt
+```
 
----
-## 🔧 Installation
+### 4) Initialize local database (first run)
 
-1. **Clone the repo**  
-    ```bash
-    git clone https://github.com/Issac-Moses/Notes-Summarizer
-    cd Notes-Summarizer-AI
-2. **Install dependencies**
-   Make sure Python 3.9+ is installed.
-    ```bash
-    pip install -r requirements.txt
-3. Run the App
-   ```bash
-   streamlit run main.py
----
-## ⚙️ Usage Guide
-1. Choose input: 🎙 Microphone | 📂 File | ▶️ YouTube.
+```bash
+python -c "import database; database.init_db()"
+```
 
-2. Configure summary quality and length.
+### 5) Run the app
 
-3. Click Start/Process.
+```bash
+streamlit run main.py
+```
 
-4. View results under the Summary tab.
+## Optional system dependency (OCR)
 
-5. Download as PDF / DOCX / JSON.
----
-## 🙌 Acknowledgements
+OCR for image-based PDFs requires Tesseract installed on your machine.
 
-1. [OpenAI Whisper](https://github.com/openai/whisper)
+- Install Tesseract (Windows):
+    - https://github.com/UB-Mannheim/tesseract/wiki
+- Ensure Tesseract is available in PATH (or configured properly) for `pytesseract`.
 
-2. [HuggingFace Transformers](https://huggingface.co/transformers/)
+If Tesseract is not installed, standard PDF text extraction still works for text-based PDFs.
 
-3. [Streamlit](https://streamlit.io/)
+## Data and storage notes
 
-4. [yt-dlp](https://github.com/yt-dlp/yt-dlp)
----
-## 📜 License
-- MIT License © 2025 [Issac Moses](https://github.com/Issac-Moses)
----
-## 📬 Contact
-- 📧 Issac Moses – issacmoses19082005@gmail.com
-- 💼 [LinkedIn](https://www.linkedin.com/in/i%EF%BD%93%EF%BD%93-a-c-m-%E5%8F%A3%EF%BD%93%E3%83%A2%EF%BD%93-d-12837831b/)
-- 📧 Thirumalainambi – sthirumalainambi5802@gmail.com 
-- 💼 [LinkedIn](www.linkedin.com/in/thirumalai-nambi-s-a94b7a29b)
----
+- Auth, study history, and personal notes are stored locally in `notes_app.db`.
+- Uploaded files are written to temp local files during processing, then removed.
+- Generated exports are saved locally (`exam_study_notes.pdf/.md/.docx`).
+- `.gitignore` is configured to avoid committing local DB and generated artifacts.
+
+## Current limitations
+
+- No cloud backend by default (data is local to the machine)
+- No multi-device shared accounts unless you integrate a hosted backend
+
+## License
+
+This project includes an MIT license file in the repository.
