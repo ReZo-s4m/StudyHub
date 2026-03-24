@@ -1,4 +1,6 @@
-# 𓅃 AI Lecture Summarizer Pro
+# 𓅃 Study Hub (AI Lecture Summarizer Pro)
+
+> Brand update: this project is now presented as **Study Hub**.
 
 > 🚀 Transform your **lecture audio/video/YouTube** content into intelligent, exportable summaries using advanced AI.
 - [AI Lecture Summarizer Banner](https://github.com/Issac-Moses/Notes-Summarizer)
@@ -14,7 +16,7 @@
 ---
 ## 📌 Project Overview
 
-**AI Lecture Summarizer Pro** is a modern Streamlit-based application that:
+**Study Hub (AI Lecture Summarizer Pro)** is a modern Streamlit-based application that:
 - Accepts audio via microphone, file upload, or YouTube link.
 - Transcribes using [OpenAI Whisper](https://github.com/openai/whisper).
 - Summarizes using `google/flan-t5-large` via HuggingFace Transformers.
