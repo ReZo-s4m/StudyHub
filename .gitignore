@@ -1,0 +1,19 @@
+# Local database and auth/session artifacts
+notes_app.db
+
+# Generated study output files
+exam_study_notes.pdf
+exam_study_notes.md
+exam_study_notes.docx
+lecture_summary.json
+lecture_summary.pdf
+
+# Temporary uploaded/processing files
+temp_*
+mic_output.wav
+
+# Python cache and virtual env
+__pycache__/
+*.py[cod]
+.venv/
+venv/

@@ -1,0 +1,13 @@
+streamlit
+transformers
+torch
+fpdf
+python-docx
+whisper
+sounddevice
+scipy
+yt-dlp
+pdfplumber
+PyPDF2
+pytesseract
+pillow
