@@ -111,7 +111,3 @@ If Tesseract is not installed, standard PDF text extraction still works for text
 ![Screenshot 2](screenshots/2.png)
 ![Screenshot 3](screenshots/3.png)
 ![Screenshot 4](screenshots/4.png)
-
-## License
-
-This project includes an MIT license file in the repository.
