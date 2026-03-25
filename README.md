@@ -104,6 +104,14 @@ If Tesseract is not installed, standard PDF text extraction still works for text
 - No cloud backend by default (data is local to the machine)
 - No multi-device shared accounts unless you integrate a hosted backend
 
+## Screenshots
+
+![Screenshot 0](screenshots/0.png)
+![Screenshot 1](screenshots/1.png)
+![Screenshot 2](screenshots/2.png)
+![Screenshot 3](screenshots/3.png)
+![Screenshot 4](screenshots/4.png)
+
 ## License
 
 This project includes an MIT license file in the repository.
