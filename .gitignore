@@ -1,5 +1,6 @@
 # Local database and auth/session artifacts
 notes_app.db
+firebase-service-account.json
 
 # Generated study output files
 exam_study_notes.pdf

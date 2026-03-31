@@ -3,11 +3,12 @@ import streamlit.components.v1 as components
 from lecture_processor import process_input, process_pdf
 from auth import show_auth_page, is_authenticated, get_current_user, logout
 from database import (
-    save_study_note, get_user_notes, delete_study_note, get_user_stats,
+    init_db, save_study_note, get_user_notes, delete_study_note, get_user_stats,
     save_personal_note, get_personal_notes, delete_personal_note,
-    validate_session
+    get_or_create_local_user,
 )
-import os, time, json, base64, tempfile, textwrap, threading, queue
+from firebase_auth import verify_session_cookie
+import os, time, json, base64, tempfile, textwrap, threading, queue, re
 from datetime import datetime, timedelta
 
 
@@ -121,32 +122,67 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
+# Initialize database on app startup
+init_db()
+
 load_enhanced_css()
 inject_dynamic_cursor()
 
-TOKEN_FILE = os.path.join(tempfile.gettempdir(), "notegen_session.txt")
+# =============================================
+# FIREBASE SESSION RESTORATION (cookie-based)
+# =============================================
+# On each page load, check if the Firebase session cookie is present in the browser
+# and valid. If so, restore the user's authenticated session.
+FIREBASE_COOKIE_NAME = "firebase_session"
 
+
+def _read_firebase_cookie_from_browser():
+    """Read the firebase session cookie via JS interop and return its value."""
+    import streamlit as st
+    cookie_html = f"""
+    <iframe id="cookie_reader_{id(st.session_state.get('rerun_count', 0))}"
+        style="display:none;"
+        srcdoc="<script>window.parent.postMessage({{type: 'get_cookie', name: '{FIREBASE_COOKIE_NAME}'}}, '*');</script>">
+    </iframe>
+    <script>
+    window.addEventListener('message', function(event) {{
+        if (event.data && event.data.type === 'get_cookie_response') {{
+            window['firebase_cookie_value'] = event.data.value || '';
+        }}
+    }});
+    // Attempt to read cookie via direct JS
+    (function() {{
+        const match = document.cookie.match(/(?:^|; ){FIREBASE_COOKIE_NAME}=([^;]*)/);
+        window['firebase_cookie_value'] = match ? match[1] : '';
+    }})();
+    </script>
+    """
+    st.html(cookie_html)
+    # Return the cookie value stored in session_state by the auth module
+    return st.session_state.get("session_cookie", None)
+
+
+# Try to restore auth from Firebase session cookie stored in session_state
 if not is_authenticated():
-    if os.path.exists(TOKEN_FILE):
-        try:
-            with open(TOKEN_FILE, "r") as f:
-                stored_token = f.read().strip()
-            if stored_token:
-                is_valid, user_data = validate_session(stored_token)
-                if is_valid and user_data:
-                    st.session_state.authenticated = True
-                    st.session_state.user = user_data
-                    st.session_state.session_token = stored_token
-                else:
-                    os.remove(TOKEN_FILE)
-        except:
-            pass
-elif st.session_state.get("session_token"):
-    try:
-        with open(TOKEN_FILE, "w") as f:
-            f.write(st.session_state.session_token)
-    except:
-        pass
+    stored_cookie = st.session_state.get("session_cookie")
+    if stored_cookie:
+        is_valid, user_data = verify_session_cookie(stored_cookie)
+        if is_valid and user_data:
+            # Map Firebase user to local DB user (create record if first login)
+            local_user_id, _ = get_or_create_local_user(
+                firebase_uid=user_data["uid"],
+                email=user_data["email"],
+                name=user_data.get("name", ""),
+            )
+            user_data["id"] = local_user_id
+            st.session_state.authenticated = True
+            st.session_state.user = user_data
+        else:
+            # Cookie invalid or expired — clear it
+            st.session_state.session_cookie = None
+            if "user" in st.session_state:
+                del st.session_state.user
+
 
 # =============================================
 # LANDING PAGE CSS (shared token)
@@ -508,11 +544,11 @@ div[data-testid="stSelectSlider"] [data-baseweb="slider"] [role="slider"]{
 .quick-summary-body{background:#fff!important;border:2.5px solid var(--dark)!important;border-radius:14px!important;box-shadow:4px 4px 0 var(--dark)!important;}
 .quick-summary-body p{color:var(--dark)!important;}
 
-/* ── OUTLINE ── */
-.outline-item{display:flex;align-items:flex-start;gap:1rem;background:linear-gradient(165deg,#fff 0%,var(--surface) 100%)!important;border:2.5px solid var(--dark)!important;border-radius:14px!important;box-shadow:0 12px 24px rgba(18,13,42,.12),4px 4px 0 var(--dark)!important;padding:1rem 1.2rem!important;margin-bottom:.75rem!important;transition:transform .12s,box-shadow .12s!important;}
-.outline-item:hover{transform:translate(-2px,-2px)!important;box-shadow:0 16px 28px rgba(18,13,42,.18),6px 6px 0 var(--dark)!important;}
-.outline-number{background:var(--purple)!important;color:#fff!important;font-family:'Fredoka One',cursive!important;font-size:1rem!important;width:32px;height:32px;border-radius:8px;border:2px solid var(--dark)!important;box-shadow:2px 2px 0 var(--dark)!important;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
-.outline-item strong{color:var(--dark)!important;font-weight:800!important;}
+/* ── SESSION ITEMS ── */
+.session-item{display:flex;align-items:flex-start;gap:1rem;background:linear-gradient(165deg,#fff 0%,var(--surface) 100%)!important;border:2.5px solid var(--dark)!important;border-radius:14px!important;box-shadow:0 12px 24px rgba(18,13,42,.12),4px 4px 0 var(--dark)!important;padding:1rem 1.2rem!important;margin-bottom:.75rem!important;transition:transform .12s,box-shadow .12s!important;}
+.session-item:hover{transform:translate(-2px,-2px)!important;box-shadow:0 16px 28px rgba(18,13,42,.18),6px 6px 0 var(--dark)!important;}
+.session-number{background:var(--purple)!important;color:#fff!important;font-family:'Fredoka One',cursive!important;font-size:1rem!important;width:32px;height:32px;border-radius:8px;border:2px solid var(--dark)!important;box-shadow:2px 2px 0 var(--dark)!important;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+.session-item strong{color:var(--dark)!important;font-weight:800!important;}
 
 /* ── DETAILED ITEMS ── */
 .detailed-item{display:flex;gap:.8rem;align-items:flex-start;background:#fff!important;border:2px solid var(--dark)!important;border-radius:12px!important;box-shadow:3px 3px 0 var(--dark)!important;padding:.9rem 1rem!important;margin-bottom:.6rem!important;}
@@ -687,14 +723,25 @@ if not is_authenticated():
         st.session_state.show_auth = True
         st.session_state.auth_mode = "register"
         st.query_params.clear()
-        st.rerun()
     elif params.get("action") == "login":
         st.session_state.show_auth = True
         st.session_state.auth_mode = "login"
         st.query_params.clear()
-        st.rerun()
+    elif params.get("action") == "back":
+        st.session_state.show_auth = False
+        st.query_params.clear()
 
     if not st.session_state.show_auth:
+        # Login button callback
+        def goto_login():
+            st.session_state.show_auth = True
+            st.session_state.auth_mode = "login"
+        
+        # Signup button callback
+        def goto_signup():
+            st.session_state.show_auth = True
+            st.session_state.auth_mode = "register"
+        
         render_html(LP_CSS + """
         <nav class="lp-nav">
             <a class="nav-logo" href="#">Study<span class="dot">Hub</span></a>
@@ -703,9 +750,9 @@ if not is_authenticated():
                 <li><a href="#how">How it works</a></li>
                 <li><a href="#reviews">Reviews</a></li>
             </ul>
-            <div class="nav-right-btns">
-                <a href="?action=login" class="lp-btn lp-btn-sm lp-btn-ghost">Log in</a>
-                <a href="?action=signup" class="lp-btn lp-btn-sm lp-btn-purple">Sign up →</a>
+            <div class="nav-right-btns" id="nav-buttons">
+                <a href="?action=login" class="lp-btn lp-btn-sm lp-btn-ghost">Sign in</a>
+                <a href="?action=signup" class="lp-btn lp-btn-sm lp-btn-dark">Get Started</a>
             </div>
         </nav>
         <section class="hero" id="home">
@@ -764,7 +811,7 @@ if not is_authenticated():
             <p class="section-sub">Real results from real students all around the world.</p>
             <div class="testi-grid">
               <div class="testi-card"><div class="testi-stars">★★★★★</div><p class="testi-text">"I went from spending 4 hours making notes to under 10 minutes. The flashcards are scary accurate for what shows up on exams!"</p><div class="testi-author"><div class="testi-av" style="background:#6C3CE1;">AK</div><div><div class="testi-name">Aisha K.</div><div class="testi-role">Medical Student · UCL</div></div></div></div>
-              <div class="testi-card"><div class="testi-stars">★★★★★</div><p class="testi-text">"Uploaded a 120-page textbook chapter and had a full outline with flashcards in seconds. This is genuinely game-changing."</p><div class="testi-author"><div class="testi-av" style="background:#FF6B6B;">MR</div><div><div class="testi-name">Marcus R.</div><div class="testi-role">CS Major · MIT</div></div></div></div>
+              <div class="testi-card"><div class="testi-stars">★★★★★</div><p class="testi-text">"Uploaded a 120-page textbook chapter and got a detailed summary with flashcards in seconds. This is genuinely game-changing."</p><div class="testi-author"><div class="testi-av" style="background:#FF6B6B;">MR</div><div><div class="testi-name">Marcus R.</div><div class="testi-role">CS Major · MIT</div></div></div></div>
               <div class="testi-card"><div class="testi-stars">★★★★★</div><p class="testi-text">"My GPA went from 2.8 to 3.6 in one semester. The spaced repetition tracking keeps me consistent without even thinking about it."</p><div class="testi-author"><div class="testi-av" style="background:#00C9A7;">JL</div><div><div class="testi-name">Julia L.</div><div class="testi-role">Law Student · Edinburgh</div></div></div></div>
             </div>
           </div>
@@ -783,6 +830,28 @@ if not is_authenticated():
             <div class="footer-links"><a href="#">Privacy</a><a href="#">Terms</a><a href="#">Contact</a></div>
         </footer>
         """)
+        
+        # Add invisible callback buttons for faster responsiveness
+        col1, col2, col3 = st.columns([3, 1, 1])
+        with col1:
+            pass
+        with col2:
+            if st.button("Login (invisible)", key="lp_login_btn", use_container_width=True, on_click=goto_login):
+                pass
+        with col3:
+            if st.button("Signup (invisible)", key="lp_signup_btn", use_container_width=True, on_click=goto_signup):
+                pass
+        
+        # Hide those buttons with CSS
+        st.markdown("""
+            <style>
+                button[key="lp_login_btn"], button[key="lp_signup_btn"],
+                [data-testid="stButton"] button[aria-label*="invisible"] {
+                    display: none !important;
+                }
+            </style>
+        """, unsafe_allow_html=True)
+        
         st.stop()
 
     else:
@@ -928,24 +997,22 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 with st.sidebar:
-    user_initials = "".join([w[0].upper() for w in (user["full_name"] or user["username"]).split()[:2]])
-    display_name = user["full_name"] or user["username"]
+    user_initials = "".join([w[0].upper() for w in (user.get("name") or user.get("email", "")).split()[:2]])
+    display_name = user.get("name") or user.get("email", "User")
     st.markdown(f"""
     <div class="profile-card">
         <div class="profile-avatar">{user_initials}</div>
         <div class="profile-info">
             <p class="profile-name">{display_name}</p>
-            <p class="profile-email">{user["email"]}</p>
+            <p class="profile-email">{user.get("email", "")}</p>
         </div>
         <span class="profile-status">● Online</span>
     </div>
     """, unsafe_allow_html=True)
 
     if st.button("Logout", key="logout_btn", use_container_width=True):
-        if os.path.exists(TOKEN_FILE):
-            try: os.remove(TOKEN_FILE)
-            except: pass
-        logout(); st.rerun()
+        logout()
+        st.rerun()
 
     st.markdown("---")
     user_stats = get_user_stats(user["id"])
@@ -989,14 +1056,10 @@ with st.sidebar:
     if st.session_state.current_result and "error" not in st.session_state.current_result:
         r = st.session_state.current_result
         sc = len(r.get("core_concepts",{}).get("definitions",[])) + len(r.get("core_concepts",{}).get("mechanisms",[]))
-        oc = len(r.get("exam_insights",{}).get("faq_points",[])) + len(r.get("core_concepts",{}).get("formulas",[]))
-        kc = len(r.get("applications",[])) + len(r.get("common_mistakes",[]))
         fc = len(r.get("active_recall",{}).get("qa_cards",[]))
         st.markdown(f"""
         <div class="content-nav">
             <div class="content-nav-item"><span>📄 Summary</span><span class="nav-badge">{sc}</span></div>
-            <div class="content-nav-item"><span>📑 Outline</span><span class="nav-badge">{oc}</span></div>
-            <div class="content-nav-item"><span>💡 Key Points</span><span class="nav-badge">{kc}</span></div>
             <div class="content-nav-item"><span>🃏 Flashcards</span><span class="nav-badge">{fc}</span></div>
         </div>
         """, unsafe_allow_html=True)
@@ -1052,43 +1115,73 @@ with tab1:
     )
 
     st.markdown("### ✉ File Upload")
-    uploaded_file = st.file_uploader("Upload Audio, Video, or PDF", type=["wav","mp3","m4a","mp4","avi","mov","pdf"])
+    uploaded_file = st.file_uploader("Upload Audio, Video, or PDF", type=["wav","mp3","m4a","mp4","avi","mov","mpeg","pdf"])
     if uploaded_file:
         st.info(f"File: {uploaded_file.name}")
-        if uploaded_file.type == "application/pdf": st.success("✓ PDF file selected")
-        elif uploaded_file.type.startswith("audio"): st.audio(uploaded_file)
-        elif uploaded_file.type.startswith("video"): st.video(uploaded_file)
-        if st.button("✈ Process File"):
+        if uploaded_file.type == "application/pdf": 
+            st.success("✓ PDF file selected")
+        elif uploaded_file.type.startswith("audio"): 
+            with st.expander("🔊 Play Audio Preview", expanded=False):
+                st.audio(uploaded_file)
+        elif uploaded_file.type.startswith("video"): 
+            with st.expander("🎬 Play Video Preview", expanded=False):
+                st.video(uploaded_file)
+        
+        st.markdown("")
+        if st.button("🚀 Summarize & Generate Notes", use_container_width=True, type="primary", key="summarize_btn"):
             st.session_state.processing = True
-            fp = f"temp_{uploaded_file.name}"
-            with open(fp,"wb") as f: f.write(uploaded_file.getvalue())
-            try:
-                with st.spinner("Processing file..."):
-                    if uploaded_file.type == "application/pdf":
-                        try:
+            
+            # Save file with absolute path
+            import tempfile
+            temp_dir = tempfile.gettempdir()
+            file_path = os.path.join(temp_dir, f"temp_{uploaded_file.name}")
+            
+            with open(file_path, "wb") as f:
+                f.write(uploaded_file.getvalue())
+            
+            # Ensure file is fully written
+            time.sleep(0.5)
+            
+            # Verify file was written successfully
+            if not os.path.exists(file_path):
+                st.error(f"❌ Failed to save file: {file_path}")
+                st.session_state.processing = False
+            elif os.path.getsize(file_path) == 0:
+                st.error(f"❌ File is empty, upload failed")
+                st.session_state.processing = False
+            else:
+                try:
+                    with st.spinner("Processing file..."):
+                        if uploaded_file.type == "application/pdf":
+                            try:
+                                result = process_input(
+                                    source_type="pdf",
+                                    pdf_text=process_pdf(file_path),
+                                    export_format=export_format,
+                                    summary_length=summary_length
+                                )
+                            except RuntimeError as e:
+                                st.error(f"⚠️ PDF error: {e}"); result = {"error": str(e)}
+                        else:
                             result = process_input(
-                                source_type="pdf",
-                                pdf_text=process_pdf(fp),
+                                source_type="file",
+                                file_path=file_path,
                                 export_format=export_format,
                                 summary_length=summary_length
                             )
-                        except RuntimeError as e:
-                            st.error(f"⚠️ PDF error: {e}"); result = {"error": str(e)}
-                    else:
-                        result = process_input(
-                            source_type="file",
-                            file_path=fp,
-                            export_format=export_format,
-                            summary_length=summary_length
-                        )
+                        st.session_state.current_result = result
+                except Exception as e:
+                    st.error(f"❌ Error: {e}"); result = {"error": str(e)}
                     st.session_state.current_result = result
-            except Exception as e:
-                st.error(f"❌ Error: {e}"); result = {"error": str(e)}
-                st.session_state.current_result = result
-            finally:
-                st.session_state.processing = False
-                if os.path.exists(fp): os.remove(fp)
-    st.markdown("</div>", unsafe_allow_html=True)
+                finally:
+                    st.session_state.processing = False
+                    # Clean up after a delay
+                    time.sleep(0.5)
+                    if os.path.exists(file_path): 
+                        try:
+                            os.remove(file_path)
+                        except:
+                            pass
 
 
 if st.session_state.current_result:
@@ -1103,14 +1196,10 @@ if st.session_state.current_result:
         search_term = st.text_input("🔍 Search in notes:", placeholder="Enter keyword to search...")
 
         sc = len(result.get("core_concepts",{}).get("definitions",[])) + len(result.get("core_concepts",{}).get("mechanisms",[]))
-        oc = len(result.get("exam_insights",{}).get("faq_points",[])) + len(result.get("core_concepts",{}).get("formulas",[]))
-        kc = len(result.get("applications",[])) + len(result.get("common_mistakes",[]))
         fc = len(result.get("active_recall",{}).get("qa_cards",[]))
 
         nav_items = {
             "summary":    f"📄 Summary ({sc})",
-            "outline":    f"📑 Outline ({oc})",
-            "keypoints":  f"💡 Key Points ({kc})",
             "flashcards": f"🃏 Flashcards ({fc})",
         }
         if st.session_state.active_section not in nav_items:
@@ -1127,51 +1216,56 @@ if st.session_state.current_result:
 
             if active == "summary":
                 snap = result.get("concept_snapshot",{})
-                st.markdown("""<div class="summary-card"><div class="summary-card-header"><h2 class="summary-card-title">Quick Summary</h2><span class="summary-meta">AI-generated overview</span></div></div>""", unsafe_allow_html=True)
+                structured_summary = result.get("structured_summary", "")
+                st.markdown("""<div class="summary-card"><div class="summary-card-header"><h2 class="summary-card-title">Smart Summary</h2><span class="summary-meta">Structured, exam-focused notes</span></div></div>""", unsafe_allow_html=True)
                 wt = snap.get("what","Summary not available.")
                 wy = snap.get("why","")
+                where = snap.get("where","")
                 if search_term:
                     wt = wt.replace(search_term,f"**{search_term}**") if search_term.lower() in wt.lower() else wt
                     wy = wy.replace(search_term,f"**{search_term}**") if search_term.lower() in wy.lower() else wy
-                st.markdown(f"""<div class="glass-container quick-summary-body"><p style="line-height:1.8;color:var(--dark);margin-bottom:1rem;">{wt}</p><p style="line-height:1.8;color:var(--dark2);">{wy}</p></div>""", unsafe_allow_html=True)
+                    where = where.replace(search_term,f"**{search_term}**") if search_term and search_term.lower() in where.lower() else where
+
+                if structured_summary.strip():
+                    if search_term and search_term.lower() in structured_summary.lower():
+                        structured_summary = structured_summary.replace(search_term, f"**{search_term}**")
+                    st.markdown("""<div class="glass-container quick-summary-body">""", unsafe_allow_html=True)
+                    st.markdown(structured_summary)
+                    st.markdown("""</div>""", unsafe_allow_html=True)
+                else:
+                    st.markdown(f"""<div class="glass-container quick-summary-body">
+                        <div style="margin-bottom:1.5rem;">
+                            <h3 style="color:#FF1493;margin-bottom:0.5rem;font-size:1.1rem;">📌 What is this?</h3>
+                            <p style="line-height:2;color:var(--dark);font-size:1rem;margin:0;">{wt}</p>
+                        </div>
+                        {f'<div style="margin-bottom:1.5rem;"><h3 style="color:#FF1493;margin-bottom:0.5rem;font-size:1.1rem;">❓ Why does it matter?</h3><p style="line-height:2;color:var(--dark2);font-size:0.95rem;margin:0;">{wy}</p></div>' if wy else ''}
+                        {f'<div><h3 style="color:#FF1493;margin-bottom:0.5rem;font-size:1.1rem;">🌍 Where is it used?</h3><p style="line-height:2;color:var(--dark2);font-size:0.95rem;margin:0;">{where}</p></div>' if where else ''}
+                    </div>""", unsafe_allow_html=True)
+                
                 with st.expander("📋 Detailed Summary", expanded=False):
                     core = result.get("core_concepts",{})
                     if core.get("definitions"):
-                        st.markdown("#### Core Principles")
+                        st.markdown("#### 📚 Core Principles & Definitions")
                         for d in core["definitions"]:
                             t = d.replace(search_term,f"**{search_term}**") if search_term and search_term.lower() in d.lower() else d
-                            p = t.split(". ",1) if ". " in t else [t,t]
-                            st.markdown(f"""<div class="detailed-item"><div class="detailed-item-bar"></div><div><strong>{p[0][:80]}</strong><br><span style="color:#555;font-size:.9rem;">{p[1] if len(p)>1 else t}</span></div></div>""", unsafe_allow_html=True)
+                            p = t.split(". ",1) if ". " in t else [t, ""]
+                            detail_text = p[1] if len(p) > 1 else ""
+                            card_html = f"""<div class="detailed-item"><div class="detailed-item-bar"></div><div><strong>{p[0][:110]}</strong>{('<br><span style="color:#555;font-size:.9rem;">' + detail_text + '</span>') if detail_text else ''}</div></div>"""
+                            st.markdown(card_html, unsafe_allow_html=True)
                     if core.get("mechanisms"):
-                        st.markdown("#### Key Mechanisms")
+                        st.markdown("#### ⚙️ Key Mechanisms & How It Works")
                         for m in core["mechanisms"]:
                             st.markdown(f"- {m.replace(search_term,f'**{search_term}**') if search_term and search_term.lower() in m.lower() else m}")
-                    if core.get("formulas"):
-                        st.markdown("#### Important Formulas")
-                        for fi in core["formulas"]: st.markdown(f"- {fi}")
+                    
+                    # Only show formulas if they contain = or mathematical symbols
+                    formulas_filtered = [f for f in core.get("formulas", []) if re.search(r'[=+\-*/^()\[\]]', f)]
+                    if formulas_filtered:
+                        st.markdown("#### 📐 Important Formulas")
+                        for fi in formulas_filtered: st.markdown(f"- `{fi}`")
+                    
                     if core.get("processes"):
-                        st.markdown("#### Step-by-Step Processes")
+                        st.markdown("#### 🔄 Step-by-Step Processes & Methods")
                         for pr in core["processes"]: st.markdown(f"- {pr}")
-
-            elif active == "outline":
-                st.markdown("""<div class="summary-card"><div class="summary-card-header"><h2 class="summary-card-title">Content Outline</h2><span class="summary-meta">Structured overview of all topics</span></div></div>""", unsafe_allow_html=True)
-                n = 1
-                snap = result.get("concept_snapshot",{})
-                if snap.get("what"):
-                    st.markdown(f"""<div class="outline-item"><span class="outline-number">{n}</span><div><strong>Topic Overview</strong><br><span style="color:#555;font-size:.9rem;">{snap["what"][:120]}</span></div></div>""", unsafe_allow_html=True); n+=1
-                core = result.get("core_concepts",{})
-                for sn, items in [("Definitions & Concepts",core.get("definitions",[])),("Key Mechanisms",core.get("mechanisms",[])),("Formulas & Equations",core.get("formulas",[])),("Processes & Methods",core.get("processes",[]))]:
-                    if items:
-                        st.markdown(f"""<div class="outline-item"><span class="outline-number">{n}</span><div><strong>{sn}</strong><br><span style="color:#555;font-size:.9rem;">{len(items)} items</span></div></div>""", unsafe_allow_html=True); n+=1
-
-            elif active == "keypoints":
-                st.markdown("""<div class="summary-card"><div class="summary-card-header"><h2 class="summary-card-title">Key Takeaways</h2><span class="summary-meta">Essential points to remember</span></div></div>""", unsafe_allow_html=True)
-                kp = list(dict.fromkeys(result.get("exam_insights",{}).get("faq_points",[]) + result.get("applications",[])[:4] + result.get("common_mistakes",[])[:3]))[:12]
-                if kp:
-                    for i, pt in enumerate(kp,1):
-                        t = pt.replace(search_term,f"**{search_term}**") if search_term and search_term.lower() in pt.lower() else pt
-                        st.markdown(f"""<div class="takeaway-item"><span class="takeaway-number">{i}</span><span class="takeaway-text">{t}</span></div>""", unsafe_allow_html=True)
-                else: st.info("No key takeaways available")
 
             elif active == "flashcards":
                 st.markdown("""<div class="summary-card"><div class="summary-card-header"><h2 class="summary-card-title">Flashcards</h2><span class="summary-meta">Click "Show Answer" on any card</span></div></div>""", unsafe_allow_html=True)
@@ -1309,8 +1403,8 @@ with tab3:
         for i, item in enumerate(st.session_state.history[:5],1):
             diff = item["result"].get("difficulty",{})
             icon = {"easy":"🟢","moderate":"🟡","advanced":"🔴"}.get(diff.get("level",""),"⚪")
-            st.markdown(f"""<div class="outline-item" style="margin-bottom:.5rem;">
-                <span class="outline-number">{i}</span>
+            st.markdown(f"""<div class="session-item" style="margin-bottom:.5rem;">
+                <span class="session-number">{i}</span>
                 <div><strong>{item.get("input_type","unknown").title()}</strong>
                 <br><span style="color:#888;font-size:.82rem;">{item.get("timestamp","")} {icon}</span></div>
             </div>""", unsafe_allow_html=True)

@@ -11,3 +11,5 @@ pdfplumber
 PyPDF2
 pytesseract
 pillow
+firebase-admin
+firebase
